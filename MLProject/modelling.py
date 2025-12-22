@@ -1,52 +1,56 @@
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 import mlflow
 import mlflow.sklearn
+import os
+from dotenv import load_dotenv
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (accuracy_score, precision_score, recall_score, 
-                             f1_score, confusion_matrix, classification_report,
-                             roc_curve, auc, roc_auc_score)
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
-import os
-from pathlib import Path
-from dotenv import load_dotenv
+                            f1_score, confusion_matrix, classification_report,
+                            roc_auc_score, roc_curve, auc)
 
-# Load .env dari root folder (parent directory) atau dari environment variables
-env_path = Path(__file__).parent.parent / '.env'
-if env_path.exists():
-    load_dotenv(dotenv_path=env_path)
-    print(f"✓ Loaded .env from: {env_path}")
+# Load environment variables
+load_dotenv()
 
-# Get credentials from environment variables (bisa dari .env atau GitHub Secrets)
-dagshub_username = os.getenv('DAGSHUB_USERNAME')
-dagshub_token = os.getenv('DAGSHUB_TOKEN')
+# Get DagsHub credentials
+DAGSHUB_USERNAME = os.getenv("DAGSHUB_USERNAME")
+DAGSHUB_TOKEN = os.getenv("DAGSHUB_TOKEN")
 
-if not dagshub_username or not dagshub_token:
+# Validate credentials
+if not DAGSHUB_USERNAME or not DAGSHUB_TOKEN:
     raise ValueError(
         "DAGSHUB_USERNAME atau DAGSHUB_TOKEN tidak ditemukan!\n"
         "Pastikan environment variables sudah di-set (melalui .env atau GitHub Secrets)\n"
-        f"DAGSHUB_USERNAME: {dagshub_username}\n"
-        f"DAGSHUB_TOKEN: {'Set' if dagshub_token else 'Not Set'}"
+        f"DAGSHUB_USERNAME: {DAGSHUB_USERNAME or 'Not Set'}\n"
+        f"DAGSHUB_TOKEN: {'Set' if DAGSHUB_TOKEN else 'Not Set'}"
     )
 
-# Setup DagsHub
-os.environ['MLFLOW_TRACKING_URI'] = 'https://dagshub.com/ZaygaErnesto/Eksperimen_SML_Zayga.mlflow'
-os.environ['MLFLOW_TRACKING_USERNAME'] = dagshub_username
-os.environ['MLFLOW_TRACKING_PASSWORD'] = dagshub_token
-
-mlflow.set_tracking_uri(os.environ['MLFLOW_TRACKING_URI'])
-
 print("✓ DagsHub credentials loaded successfully!")
-print(f"✓ Tracking URI: {os.environ['MLFLOW_TRACKING_URI']}")
-print(f"✓ Username: {dagshub_username}")
+print(f"✓ Username: {DAGSHUB_USERNAME}")
 
-# Load data
-data_path = os.getenv('DATA_PATH', './preprocessed_data.csv')
+# Configure MLflow with DagsHub
+DAGSHUB_REPO_NAME = "Eksperimen_SML_Zayga"  # Ganti dengan nama repo Anda
+tracking_uri = f"https://dagshub.com/{DAGSHUB_USERNAME}/{DAGSHUB_REPO_NAME}.mlflow"
+
+os.environ['MLFLOW_TRACKING_URI'] = tracking_uri
+os.environ['MLFLOW_TRACKING_USERNAME'] = DAGSHUB_USERNAME
+os.environ['MLFLOW_TRACKING_PASSWORD'] = DAGSHUB_TOKEN
+
+mlflow.set_tracking_uri(tracking_uri)
+print(f"✓ Tracking URI: {tracking_uri}")
+
+# Load preprocessed data
+data_path = os.path.join(os.path.dirname(__file__), 'preprocessed_data.csv')
+if not os.path.exists(data_path):
+    data_path = 'preprocessed_data.csv'
+
 df = pd.read_csv(data_path)
+print(f"✓ Data loaded: {df.shape[0]} rows, {df.shape[1]} columns")
 
-# Separate features and target
+# Prepare features and target
 X = df.drop('Target', axis=1)
 y = df['Target']
 
@@ -56,7 +60,7 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_
 # Set MLflow experiment
 mlflow.set_experiment("Advance_DagsHub_Training")
 
-# Disable autologging
+# Disable autologging to avoid conflicts
 mlflow.sklearn.autolog(disable=True)
 
 # Define hyperparameter grid
@@ -71,8 +75,23 @@ param_grid = {
 rf = RandomForestClassifier(random_state=42)
 grid_search = GridSearchCV(rf, param_grid, cv=5, scoring='accuracy', n_jobs=-1)
 
-with mlflow.start_run(run_name="RandomForest_DagsHub_Advanced"):
+# Check if there's an active run (created by mlflow run CLI)
+active_run = mlflow.active_run()
+
+if active_run:
+    # Use the existing run created by mlflow run CLI
+    print(f"✓ Using existing MLflow run: {active_run.info.run_id}")
+    run_context = active_run
+    should_end_run = False
+else:
+    # Create a new run if not running via mlflow run CLI
+    print("✓ Creating new MLflow run...")
+    run_context = mlflow.start_run(run_name="RandomForest_DagsHub_Advanced")
+    should_end_run = True
+
+try:
     # Train with hyperparameter tuning
+    print("Training model with GridSearchCV...")
     grid_search.fit(X_train, y_train)
     
     # Best model
@@ -82,7 +101,7 @@ with mlflow.start_run(run_name="RandomForest_DagsHub_Advanced"):
     y_pred = best_model.predict(X_test)
     y_pred_proba = best_model.predict_proba(X_test)
     
-    # Calculate metrics (autolog metrics)
+    # Calculate metrics
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred, average='weighted')
     recall = recall_score(y_test, y_pred, average='weighted')
@@ -94,33 +113,38 @@ with mlflow.start_run(run_name="RandomForest_DagsHub_Advanced"):
     mlflow.log_param("test_size", 0.2)
     mlflow.log_param("random_state", 42)
     
-    # Manual logging - Metrics (autolog)
+    # Manual logging - Metrics
     mlflow.log_metric("accuracy", accuracy)
     mlflow.log_metric("precision", precision)
     mlflow.log_metric("recall", recall)
     mlflow.log_metric("f1_score", f1)
     mlflow.log_metric("training_score", grid_search.best_score_)
     
-    # Additional metrics (not in autolog)
-    if len(np.unique(y)) == 2:  # Binary classification
+    # Additional metrics for binary classification
+    if len(np.unique(y)) == 2:
         roc_auc = roc_auc_score(y_test, y_pred_proba[:, 1])
         mlflow.log_metric("roc_auc", roc_auc)
     
     # Log model
     mlflow.sklearn.log_model(best_model, "model")
     
-    # ARTIFACT 1: Confusion Matrix (Additional)
+    # Create artifacts directory
+    artifacts_dir = "artifacts"
+    os.makedirs(artifacts_dir, exist_ok=True)
+    
+    # ARTIFACT 1: Confusion Matrix
     cm = confusion_matrix(y_test, y_pred)
     plt.figure(figsize=(8, 6))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
     plt.title('Confusion Matrix')
     plt.ylabel('Actual')
     plt.xlabel('Predicted')
-    plt.savefig('confusion_matrix.png')
-    mlflow.log_artifact('confusion_matrix.png')
+    cm_path = os.path.join(artifacts_dir, 'confusion_matrix.png')
+    plt.savefig(cm_path)
+    mlflow.log_artifact(cm_path)
     plt.close()
     
-    # ARTIFACT 2: Feature Importance (Additional)
+    # ARTIFACT 2: Feature Importance
     feature_importance = pd.DataFrame({
         'feature': X.columns,
         'importance': best_model.feature_importances_
@@ -132,28 +156,31 @@ with mlflow.start_run(run_name="RandomForest_DagsHub_Advanced"):
     plt.title('Top 15 Feature Importances')
     plt.gca().invert_yaxis()
     plt.tight_layout()
-    plt.savefig('feature_importance.png')
-    mlflow.log_artifact('feature_importance.png')
+    fi_path = os.path.join(artifacts_dir, 'feature_importance.png')
+    plt.savefig(fi_path)
+    mlflow.log_artifact(fi_path)
     plt.close()
     
     # Save feature importance as CSV
-    feature_importance.to_csv('feature_importance.csv', index=False)
-    mlflow.log_artifact('feature_importance.csv')
+    fi_csv_path = os.path.join(artifacts_dir, 'feature_importance.csv')
+    feature_importance.to_csv(fi_csv_path, index=False)
+    mlflow.log_artifact(fi_csv_path)
     
-    # ARTIFACT 3: Classification Report (Additional)
+    # ARTIFACT 3: Classification Report
     report = classification_report(y_test, y_pred, output_dict=True)
     report_df = pd.DataFrame(report).transpose()
-    report_df.to_csv('classification_report.csv')
-    mlflow.log_artifact('classification_report.csv')
+    report_path = os.path.join(artifacts_dir, 'classification_report.csv')
+    report_df.to_csv(report_path)
+    mlflow.log_artifact(report_path)
     
-    # ARTIFACT 4: ROC Curve (Additional - if binary classification)
+    # ARTIFACT 4: ROC Curve (if binary classification)
     if len(np.unique(y)) == 2:
         fpr, tpr, _ = roc_curve(y_test, y_pred_proba[:, 1])
-        roc_auc = auc(fpr, tpr)
+        roc_auc_val = auc(fpr, tpr)
         
         plt.figure(figsize=(8, 6))
         plt.plot(fpr, tpr, color='darkorange', lw=2, 
-                label=f'ROC curve (AUC = {roc_auc:.2f})')
+                label=f'ROC curve (AUC = {roc_auc_val:.2f})')
         plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
         plt.xlim([0.0, 1.0])
         plt.ylim([0.0, 1.05])
@@ -161,11 +188,12 @@ with mlflow.start_run(run_name="RandomForest_DagsHub_Advanced"):
         plt.ylabel('True Positive Rate')
         plt.title('Receiver Operating Characteristic (ROC) Curve')
         plt.legend(loc="lower right")
-        plt.savefig('roc_curve.png')
-        mlflow.log_artifact('roc_curve.png')
+        roc_path = os.path.join(artifacts_dir, 'roc_curve.png')
+        plt.savefig(roc_path)
+        mlflow.log_artifact(roc_path)
         plt.close()
     
-    # ARTIFACT 5: Model Performance Summary (Additional)
+    # ARTIFACT 5: Model Performance Summary
     summary = {
         'Model': 'RandomForestClassifier',
         'Best Parameters': str(grid_search.best_params_),
@@ -176,8 +204,9 @@ with mlflow.start_run(run_name="RandomForest_DagsHub_Advanced"):
         'Training Score': grid_search.best_score_
     }
     summary_df = pd.DataFrame([summary])
-    summary_df.to_csv('model_summary.csv', index=False)
-    mlflow.log_artifact('model_summary.csv')
+    summary_path = os.path.join(artifacts_dir, 'model_summary.csv')
+    summary_df.to_csv(summary_path, index=False)
+    mlflow.log_artifact(summary_path)
     
     print("=" * 50)
     print("ADVANCED MODEL TRAINING RESULTS (DagsHub)")
@@ -190,6 +219,10 @@ with mlflow.start_run(run_name="RandomForest_DagsHub_Advanced"):
     if len(np.unique(y)) == 2:
         print(f"ROC AUC: {roc_auc:.4f}")
     print("=" * 50)
-    print(f"Check results at: {os.environ['MLFLOW_TRACKING_URI']}")
+    print(f"✓ Results logged to: {tracking_uri}")
+    print("✓ Training completed successfully!")
 
-print("Advanced model training completed!")
+finally:
+    # Only end the run if we created it
+    if should_end_run:
+        mlflow.end_run()
