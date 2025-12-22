@@ -14,7 +14,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
       
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -31,12 +31,13 @@ jobs:
           echo "DAGSHUB_USERNAME=${{ secrets.DAGSHUB_USERNAME }}" >> $GITHUB_ENV
           echo "DAGSHUB_TOKEN=${{ secrets.DAGSHUB_TOKEN }}" >> $GITHUB_ENV
       
+      - name: Set environment variable to suppress conda warning
+        run: echo "MLFLOW_DISABLE_ENV_MANAGER_CONDA_WARNING=TRUE" >> $GITHUB_ENV
+      
       - name: Run MLflow Project with local env manager
         run: |
           cd MLProject
-          mlflow run . --env-manager=local --no-conda
-        env:
-          MLFLOW_DISABLE_ENV_MANAGER_CONDA_WARNING: "TRUE"
+          mlflow run . --env-manager=local
       
       - name: Commit and push artifacts to repository
         run: |
@@ -62,7 +63,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           ref: main
       
@@ -121,10 +122,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Upload Docker Hub link
+      - name: Upload Docker Hub link artifact
         run: echo "https://hub.docker.com/r/${{ secrets.DOCKERHUB_USERNAME }}/mlflow-model" > docker_hub_link.txt
       
-      - name: Upload Docker Hub link artifact
+      - name: Upload Docker Hub link to Actions
         uses: actions/upload-artifact@v4
         with:
           name: docker-hub-link
