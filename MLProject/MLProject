@@ -11,4 +11,4 @@ entry_points:
       max_depth: {type: str, default: "15,20,None"}
       min_samples_split: {type: str, default: "2,5"}
       min_samples_leaf: {type: str, default: "1,2"}
-    command: "conda run -n mlflow-env python modelling.py"
+    command: "python modelling.py"
