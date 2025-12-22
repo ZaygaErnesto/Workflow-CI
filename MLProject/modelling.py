@@ -35,6 +35,12 @@ print(f"✓ Username: {DAGSHUB_USERNAME}")
 DAGSHUB_REPO_NAME = "Eksperimen_SML_Zayga"  # Ganti dengan nama repo Anda
 tracking_uri = f"https://dagshub.com/{DAGSHUB_USERNAME}/{DAGSHUB_REPO_NAME}.mlflow"
 
+# IMPORTANT: Clear any existing run ID from environment to avoid conflicts
+# This happens when running via 'mlflow run' CLI which sets MLFLOW_RUN_ID
+if 'MLFLOW_RUN_ID' in os.environ:
+    print(f"⚠ Clearing existing MLFLOW_RUN_ID: {os.environ['MLFLOW_RUN_ID']}")
+    del os.environ['MLFLOW_RUN_ID']
+
 os.environ['MLFLOW_TRACKING_URI'] = tracking_uri
 os.environ['MLFLOW_TRACKING_USERNAME'] = DAGSHUB_USERNAME
 os.environ['MLFLOW_TRACKING_PASSWORD'] = DAGSHUB_TOKEN
@@ -75,21 +81,12 @@ param_grid = {
 rf = RandomForestClassifier(random_state=42)
 grid_search = GridSearchCV(rf, param_grid, cv=5, scoring='accuracy', n_jobs=-1)
 
-# Check if there's an active run (created by mlflow run CLI)
-active_run = mlflow.active_run()
+# Always create a fresh run - we cleared MLFLOW_RUN_ID above
+print("✓ Creating new MLflow run...")
 
-if active_run:
-    # Use the existing run created by mlflow run CLI
-    print(f"✓ Using existing MLflow run: {active_run.info.run_id}")
-    run_context = active_run
-    should_end_run = False
-else:
-    # Create a new run if not running via mlflow run CLI
-    print("✓ Creating new MLflow run...")
-    run_context = mlflow.start_run(run_name="RandomForest_DagsHub_Advanced")
-    should_end_run = True
-
-try:
+with mlflow.start_run(run_name="RandomForest_DagsHub_Advanced") as run:
+    print(f"✓ Run started with ID: {run.info.run_id}")
+    
     # Train with hyperparameter tuning
     print("Training model with GridSearchCV...")
     grid_search.fit(X_train, y_train)
@@ -220,9 +217,5 @@ try:
         print(f"ROC AUC: {roc_auc:.4f}")
     print("=" * 50)
     print(f"✓ Results logged to: {tracking_uri}")
+    print(f"✓ Run ID: {run.info.run_id}")
     print("✓ Training completed successfully!")
-
-finally:
-    # Only end the run if we created it
-    if should_end_run:
-        mlflow.end_run()
