@@ -1,0 +1,14 @@
+name: predictive-maintenance-project
+
+conda_env: conda.yaml
+
+entry_points:
+  main:
+    parameters:
+      test_size: {type: float, default: 0.2}
+      random_state: {type: int, default: 42}
+      n_estimators: {type: str, default: "100,200,300"}
+      max_depth: {type: str, default: "15,20,None"}
+      min_samples_split: {type: str, default: "2,5"}
+      min_samples_leaf: {type: str, default: "1,2"}
+    command: "python modelling.py"
