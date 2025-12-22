@@ -15,7 +15,7 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -51,7 +51,7 @@ jobs:
         mlflow run . --no-conda
         
     - name: Upload artifacts to GitHub
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: model-artifacts
         path: |
@@ -66,7 +66,7 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
@@ -92,7 +92,7 @@ jobs:
         echo "Commit Tag: ${{ secrets.DOCKER_USERNAME }}/mlflow-heart-disease:${{ github.sha }}" >> MLProject/docker-hub-link.txt
         
     - name: Upload Docker Hub link
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: docker-info
         path: MLProject/docker-hub-link.txt
