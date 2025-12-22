@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -39,17 +41,23 @@ jobs:
           cd MLProject
           mlflow run . --env-manager=local
       
+      - name: List artifacts for debugging
+        run: |
+          echo "=== Listing artifacts directory ==="
+          ls -la MLProject/artifacts/ || echo "No artifacts directory found"
+          find MLProject/artifacts/ -type f || echo "No files in artifacts"
+      
       - name: Commit and push artifacts to repository
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add MLProject/artifacts/ || true
+          git add MLProject/artifacts/
           git commit -m "Add model artifacts from workflow run [skip ci]" || echo "No changes to commit"
-          git push || echo "No changes to push"
+          git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Upload artifacts to GitHub Actions (backup)
+      - name: Upload artifacts to GitHub Actions
         uses: actions/upload-artifact@v4
         with:
           name: model-artifacts
@@ -66,10 +74,23 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Pull latest changes with artifacts
         run: |
           git pull origin main
+      
+      - name: Download artifacts from previous job
+        uses: actions/download-artifact@v4
+        with:
+          name: model-artifacts
+          path: ./MLProject/artifacts/
+      
+      - name: Verify artifacts exist
+        run: |
+          echo "=== Checking artifacts ==="
+          ls -la MLProject/artifacts/
+          ls -la MLProject/artifacts/model/ || echo "Model directory not found"
       
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -89,7 +110,7 @@ jobs:
         run: |
           cd MLProject
           mlflow models build-docker \
-            -m artifacts/model \
+            -m ./artifacts/model \
             -n ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-model:latest
       
       - name: Tag Docker image with commit SHA
@@ -104,6 +125,7 @@ jobs:
       
       - name: Save Docker Hub link to repo
         run: |
+          mkdir -p MLProject
           echo "# Docker Hub Images" > MLProject/DOCKER_HUB.md
           echo "" >> MLProject/DOCKER_HUB.md
           echo "Latest build: $(date)" >> MLProject/DOCKER_HUB.md
