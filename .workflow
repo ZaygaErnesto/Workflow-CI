@@ -83,13 +83,13 @@ jobs:
         context: ./MLProject
         file: ./MLProject/Dockerfile
         push: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/mlflow-heart-disease:latest,${{ secrets.DOCKER_USERNAME }}/mlflow-heart-disease:${{ github.sha }}
+        tags: ${{ secrets.DOCKER_USERNAME }}/predictive-maintenance:latest,${{ secrets.DOCKER_USERNAME }}/predictive-maintenance:${{ github.sha }}
         
     - name: Create Docker Hub link file
       run: |
-        echo "Docker Image: https://hub.docker.com/r/${{ secrets.DOCKER_USERNAME }}/mlflow-heart-disease" > MLProject/docker-hub-link.txt
-        echo "Latest Tag: ${{ secrets.DOCKER_USERNAME }}/mlflow-heart-disease:latest" >> MLProject/docker-hub-link.txt
-        echo "Commit Tag: ${{ secrets.DOCKER_USERNAME }}/mlflow-heart-disease:${{ github.sha }}" >> MLProject/docker-hub-link.txt
+        echo "Docker Image: https://hub.docker.com/r/${{ secrets.DOCKER_USERNAME }}/predictive-maintenance" > MLProject/docker-hub-link.txt
+        echo "Latest Tag: ${{ secrets.DOCKER_USERNAME }}/predictive-maintenance:latest" >> MLProject/docker-hub-link.txt
+        echo "Commit Tag: ${{ secrets.DOCKER_USERNAME }}/predictive-maintenance:${{ github.sha }}" >> MLProject/docker-hub-link.txt
         
     - name: Upload Docker Hub link
       uses: actions/upload-artifact@v4
