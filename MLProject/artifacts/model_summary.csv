@@ -1,2 +1,0 @@
-Model,Best Parameters,Accuracy,Precision,Recall,F1 Score,Training Score
-RandomForestClassifier,"{'max_depth': 15, 'min_samples_leaf': 1, 'min_samples_split': 2, 'n_estimators': 200}",0.9925,0.9922605249134026,0.9925,0.9922784958871915,0.992375
