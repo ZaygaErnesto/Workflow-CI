@@ -5,6 +5,7 @@ import seaborn as sns
 import mlflow
 import mlflow.sklearn
 import os
+import joblib
 from dotenv import load_dotenv
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
@@ -122,12 +123,23 @@ with mlflow.start_run(run_name="RandomForest_DagsHub_Advanced") as run:
         roc_auc = roc_auc_score(y_test, y_pred_proba[:, 1])
         mlflow.log_metric("roc_auc", roc_auc)
     
-    # Log model
-    mlflow.sklearn.log_model(best_model, "model")
-    
     # Create artifacts directory
     artifacts_dir = "artifacts"
     os.makedirs(artifacts_dir, exist_ok=True)
+    
+    # ========================================
+    # SAVE MODEL TO LOCAL artifacts/model FOLDER
+    # ========================================
+    model_dir = os.path.join(artifacts_dir, "model")
+    os.makedirs(model_dir, exist_ok=True)
+    
+    # Save using mlflow.sklearn.save_model (creates MLmodel file)
+    mlflow.sklearn.save_model(best_model, model_dir)
+    print(f"✓ Model saved locally to: {model_dir}")
+    
+    # Also log model to MLflow tracking server (DagsHub)
+    mlflow.sklearn.log_model(best_model, "model")
+    print(f"✓ Model logged to MLflow tracking server")
     
     # ARTIFACT 1: Confusion Matrix
     cm = confusion_matrix(y_test, y_pred)
@@ -205,6 +217,16 @@ with mlflow.start_run(run_name="RandomForest_DagsHub_Advanced") as run:
     summary_df.to_csv(summary_path, index=False)
     mlflow.log_artifact(summary_path)
     
+    # Verify model directory structure
+    print("\n=== Model Directory Structure ===")
+    for root, dirs, files in os.walk(model_dir):
+        level = root.replace(model_dir, '').count(os.sep)
+        indent = ' ' * 2 * level
+        print(f'{indent}{os.path.basename(root)}/')
+        subindent = ' ' * 2 * (level + 1)
+        for file in files:
+            print(f'{subindent}{file}')
+    
     print("=" * 50)
     print("ADVANCED MODEL TRAINING RESULTS (DagsHub)")
     print("=" * 50)
@@ -218,4 +240,5 @@ with mlflow.start_run(run_name="RandomForest_DagsHub_Advanced") as run:
     print("=" * 50)
     print(f"✓ Results logged to: {tracking_uri}")
     print(f"✓ Run ID: {run.info.run_id}")
+    print(f"✓ Local artifacts saved to: {os.path.abspath(artifacts_dir)}")
     print("✓ Training completed successfully!")
