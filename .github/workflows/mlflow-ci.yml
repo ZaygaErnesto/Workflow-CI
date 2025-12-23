@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # Allow workflow to push commits
+  contents: write
 
 jobs:
   train-model:
@@ -17,14 +17,14 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.8'
+          python-version: '3.9'  # Changed from 3.8 to 3.9
       
       - name: Install dependencies
         run: |
@@ -44,11 +44,10 @@ jobs:
           cd MLProject
           mlflow run . --env-manager=local
       
-      - name: List artifacts for debugging
+      - name: List all artifacts (detailed)
         run: |
-          echo "=== Listing artifacts directory ==="
-          ls -la MLProject/artifacts/ || echo "No artifacts directory found"
-          find MLProject/artifacts/ -type f || echo "No files in artifacts"
+          echo "=== Artifacts directory structure ==="
+          find MLProject/artifacts/ -type f -o -type d
       
       - name: Commit and push artifacts to repository
         run: |
@@ -74,7 +73,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -98,7 +97,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.8'
+          python-version: '3.9'  # Changed from 3.8 to 3.9
       
       - name: Install MLflow
         run: pip install mlflow
@@ -111,9 +110,11 @@ jobs:
       
       - name: Build Docker image using MLflow
         run: |
-          cd MLProject
+          MODEL_PATH="$(pwd)/MLProject/artifacts/model"
+          echo "Building Docker image from: $MODEL_PATH"
+          
           mlflow models build-docker \
-            -m ./artifacts/model \
+            -m "$MODEL_PATH" \
             -n ${{ secrets.DOCKERHUB_USERNAME }}/mlflow-model:latest
       
       - name: Tag Docker image with commit SHA
