@@ -109,6 +109,201 @@ with mlflow.start_run(run_name="RandomForest_Basic_Model") as run:
     # Create artifacts directory
     artifacts_dir = "artifacts"
     model_dir = os.path.join(artifacts_dir, "model")
+    
+    # Remove existing model directory to avoid conflicts
+    import shutil
+    if os.path.exists(model_dir):
+        print(f"⚠ Removing existing model directory: {model_dir}")
+        shutil.rmtree(model_dir)
+    
+    os.makedirs(model_dir, exist_ok=True)
+    print(f"✓ Created fresh model directory: {model_dir}")
+    
+    # ========================================
+    # METHOD 1: Use mlflow.sklearn.save_model (PRIMARY)
+    # ========================================
+    print("Saving model with mlflow.sklearn.save_model()...")
+    try:
+        mlflow.sklearn.save_model(
+            sk_model=model,
+            path=model_dir,
+            serialization_format='cloudpickle'
+        )
+        print(f"✓ MLflow save_model successful")
+    except Exception as e:
+        print(f"✗ MLflow save_model failed: {e}")
+        print("Falling back to manual save...")
+        
+        # ========================================
+        # FALLBACK: Manual save with pickle
+        # ========================================
+        import pickle
+        
+        model_pkl_path = os.path.join(model_dir, "model.pkl")
+        
+        # Try multiple serialization methods
+        saved = False
+        
+        # Try 1: cloudpickle
+        try:
+            import cloudpickle
+            with open(model_pkl_path, 'wb') as f:
+                cloudpickle.dump(model, f)
+            print(f"✓ Saved with cloudpickle")
+            saved = True
+        except Exception as e1:
+            print(f"⚠ Cloudpickle failed: {e1}")
+        
+        # Try 2: pickle
+        if not saved:
+            try:
+                with open(model_pkl_path, 'wb') as f:
+                    pickle.dump(model, f, protocol=pickle.HIGHEST_PROTOCOL)
+                print(f"✓ Saved with pickle")
+                saved = True
+            except Exception as e2:
+                print(f"⚠ Pickle failed: {e2}")
+        
+        # Try 3: joblib
+        if not saved:
+            try:
+                import joblib
+                joblib.dump(model, model_pkl_path)
+                print(f"✓ Saved with joblib")
+                saved = True
+            except Exception as e3:
+                print(f"✗ Joblib failed: {e3}")
+        
+        if not saved:
+            raise Exception("All serialization methods failed!")
+        
+        # Create minimal MLmodel file
+        mlmodel_content = f"""artifact_path: model
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.9.25
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.2.2
+mlflow_version: 2.9.2
+run_id: {run.info.run_id}
+"""
+        with open(os.path.join(model_dir, "MLmodel"), 'w') as f:
+            f.write(mlmodel_content)
+        
+        # Create conda.yaml
+        conda_content = """channels:
+- conda-forge
+dependencies:
+- python=3.9.25
+- pip<=24.0
+- pip:
+  - mlflow==2.9.2
+  - cloudpickle==3.0.0
+  - scikit-learn==1.2.2
+name: mlflow-env
+"""
+        with open(os.path.join(model_dir, "conda.yaml"), 'w') as f:
+            f.write(conda_content)
+        
+        # Create python_env.yaml
+        python_env_content = """python: 3.9.25
+build_dependencies:
+- pip<=24.0
+dependencies:
+- -r requirements.txt
+"""
+        with open(os.path.join(model_dir, "python_env.yaml"), 'w') as f:
+            f.write(python_env_content)
+        
+        # Create requirements.txt
+        with open(os.path.join(model_dir, "requirements.txt"), 'w') as f:
+            f.write("mlflow==2.9.2\ncloudpickle==3.0.0\nscikit-learn==1.2.2\n")
+    
+    # ========================================
+    # VERIFY model.pkl exists
+    # ========================================
+    model_pkl_path = os.path.join(model_dir, "model.pkl")
+    if os.path.exists(model_pkl_path):
+        file_size = os.path.getsize(model_pkl_path)
+        print(f"✓ ✓ ✓ model.pkl VERIFIED: {file_size:,} bytes")
+    else:
+        print(f"✗ ✗ ✗ ERROR: model.pkl NOT FOUND at {model_pkl_path}")
+        print(f"Available files in {model_dir}:")
+        print(os.listdir(model_dir))
+        raise FileNotFoundError(f"model.pkl missing after save!")
+    
+    # ========================================
+    # LOG MODEL TO TRACKING SERVER
+    # ========================================
+    try:
+        mlflow.sklearn.log_model(model, "model")
+        print(f"✓ Model logged to MLflow tracking server")
+    except Exception as e:
+        print(f"⚠ Log to tracking server failed (non-critical): {e}")
+    
+    # ========================================
+    # LIST ALL FILES
+    # ========================================
+    print("\n" + "=" * 60)
+    print("📦 MODEL DIRECTORY CONTENTS:")
+    print("=" * 60)
+    for item in os.listdir(model_dir):
+        item_path = os.path.join(model_dir, item)
+        if os.path.isfile(item_path):
+            size = os.path.getsize(item_path)
+            print(f"  {item} ({size:,} bytes)")
+    
+    # Print results
+    print("\n" + "=" * 60)
+    print("📊 TRAINING RESULTS")
+    print("=" * 60)
+    print(f"Accuracy:  {accuracy:.4f}")
+    print(f"Precision: {precision:.4f}")
+    print(f"Recall:    {recall:.4f}")
+    print(f"F1 Score:  {f1:.4f}")
+    print("=" * 60)
+    print(f"✓ Local artifacts: {os.path.abspath(artifacts_dir)}")
+    print(f"✓ MLflow run ID: {run.info.run_id}")
+    print("✓ Training completed!")
+    print(f"✓ Run ID: {run.info.run_id}")
+    
+    # Train model
+    print("Training model...")
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+    
+    # Predictions
+    y_pred = model.predict(X_test)
+    
+    # Calculate metrics
+    accuracy = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred, average='weighted')
+    recall = recall_score(y_test, y_pred, average='weighted')
+    f1 = f1_score(y_test, y_pred, average='weighted')
+    
+    # Log parameters
+    mlflow.log_param("n_estimators", 100)
+    mlflow.log_param("random_state", 42)
+    mlflow.log_param("test_size", 0.2)
+    
+    # Log metrics
+    mlflow.log_metric("accuracy", accuracy)
+    mlflow.log_metric("precision", precision)
+    mlflow.log_metric("recall", recall)
+    mlflow.log_metric("f1_score", f1)
+    
+    # Create artifacts directory
+    artifacts_dir = "artifacts"
+    model_dir = os.path.join(artifacts_dir, "model")
     os.makedirs(model_dir, exist_ok=True)
     
     # ========================================
