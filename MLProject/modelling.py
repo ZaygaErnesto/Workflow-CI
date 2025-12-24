@@ -3,6 +3,8 @@ import numpy as np
 import mlflow
 import mlflow.sklearn
 import os
+import cloudpickle
+import joblib
 from dotenv import load_dotenv
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
@@ -15,16 +17,14 @@ load_dotenv()
 DAGSHUB_USERNAME = os.getenv("DAGSHUB_USERNAME")
 DAGSHUB_TOKEN = os.getenv("DAGSHUB_TOKEN")
 
-# Validate credentials (optional for local run)
+# Validate credentials
 if DAGSHUB_USERNAME and DAGSHUB_TOKEN:
     print("✓ DagsHub credentials loaded successfully!")
     print(f"✓ Username: {DAGSHUB_USERNAME}")
     
-    # Configure MLflow with DagsHub
     DAGSHUB_REPO_NAME = "Eksperimen_SML_Zayga"
     tracking_uri = f"https://dagshub.com/{DAGSHUB_USERNAME}/{DAGSHUB_REPO_NAME}.mlflow"
     
-    # Clear existing run ID
     if 'MLFLOW_RUN_ID' in os.environ:
         print(f"⚠ Clearing existing MLFLOW_RUN_ID: {os.environ['MLFLOW_RUN_ID']}")
         del os.environ['MLFLOW_RUN_ID']
@@ -39,7 +39,7 @@ else:
     print("⚠ Running without DagsHub tracking (local mode)")
     mlflow.set_tracking_uri("file:./mlruns")
 
-# Load preprocessed data - Multiple path fallbacks
+# Load preprocessed data
 data_paths = [
     os.path.join(os.path.dirname(__file__), 'preprocessed_data.csv'),
     'preprocessed_data.csv',
@@ -73,10 +73,9 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_
 # Set MLflow experiment
 mlflow.set_experiment("Basic_Model_Training")
 
-# Disable autologging to avoid conflicts with mlflow run
+# Disable autologging
 mlflow.sklearn.autolog(disable=True)
 
-# Start MLflow run
 print("✓ Starting MLflow run...")
 
 with mlflow.start_run(run_name="RandomForest_Basic_Model") as run:
@@ -96,11 +95,12 @@ with mlflow.start_run(run_name="RandomForest_Basic_Model") as run:
     recall = recall_score(y_test, y_pred, average='weighted')
     f1 = f1_score(y_test, y_pred, average='weighted')
     
-    # Log parameters & metrics
+    # Log parameters
     mlflow.log_param("n_estimators", 100)
     mlflow.log_param("random_state", 42)
     mlflow.log_param("test_size", 0.2)
     
+    # Log metrics
     mlflow.log_metric("accuracy", accuracy)
     mlflow.log_metric("precision", precision)
     mlflow.log_metric("recall", recall)
@@ -108,53 +108,91 @@ with mlflow.start_run(run_name="RandomForest_Basic_Model") as run:
     
     # Create artifacts directory
     artifacts_dir = "artifacts"
-    os.makedirs(artifacts_dir, exist_ok=True)
-    
-    # ========================================
-    # STEP 1: Save model using MLflow
-    # ========================================
     model_dir = os.path.join(artifacts_dir, "model")
     os.makedirs(model_dir, exist_ok=True)
     
-    try:
-        mlflow.sklearn.save_model(model, model_dir)
-        print(f"✓ Model saved via MLflow: {model_dir}")
-    except Exception as e:
-        print(f"⚠ MLflow save failed: {e}")
-    
     # ========================================
-    # STEP 2: FORCE SAVE model.pkl manually
+    # SAVE MODEL FILES MANUALLY
     # ========================================
-    import joblib
-    import cloudpickle
     
+    # 1. Save model.pkl with cloudpickle
     model_pkl_path = os.path.join(model_dir, "model.pkl")
-    
     try:
-        # Try with cloudpickle (MLflow's default)
         with open(model_pkl_path, 'wb') as f:
             cloudpickle.dump(model, f)
-        print(f"✓ [MANUAL] model.pkl saved with cloudpickle: {model_pkl_path}")
+        print(f"✓ model.pkl saved: {model_pkl_path}")
     except Exception as e:
-        print(f"⚠ Cloudpickle failed: {e}")
-        try:
-            # Fallback to joblib
-            joblib.dump(model, model_pkl_path)
-            print(f"✓ [MANUAL] model.pkl saved with joblib: {model_pkl_path}")
-        except Exception as e2:
-            print(f"✗ Failed to save model.pkl: {e2}")
+        print(f"⚠ Cloudpickle failed: {e}, trying joblib...")
+        joblib.dump(model, model_pkl_path)
+        print(f"✓ model.pkl saved with joblib: {model_pkl_path}")
+    
+    # 2. Create MLmodel file
+    mlmodel_content = f"""artifact_path: model
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.9.25
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.2.2
+mlflow_version: 2.9.2
+model_size_bytes: {os.path.getsize(model_pkl_path)}
+model_uuid: {run.info.run_id}
+run_id: {run.info.run_id}
+utc_time_created: '{pd.Timestamp.now().isoformat()}'
+"""
+    
+    with open(os.path.join(model_dir, "MLmodel"), 'w') as f:
+        f.write(mlmodel_content)
+    print(f"✓ MLmodel file created")
+    
+    # 3. Create conda.yaml
+    conda_yaml = """channels:
+- conda-forge
+dependencies:
+- python=3.9.25
+- pip<=24.0
+- pip:
+  - mlflow==2.9.2
+  - cloudpickle==3.0.0
+  - numpy==1.24.3
+  - scikit-learn==1.2.2
+name: mlflow-env
+"""
+    with open(os.path.join(model_dir, "conda.yaml"), 'w') as f:
+        f.write(conda_yaml)
+    print(f"✓ conda.yaml created")
+    
+    # 4. Create python_env.yaml
+    python_env = """python: 3.9.25
+build_dependencies:
+- pip<=24.0
+dependencies:
+- -r requirements.txt
+"""
+    with open(os.path.join(model_dir, "python_env.yaml"), 'w') as f:
+        f.write(python_env)
+    print(f"✓ python_env.yaml created")
+    
+    # 5. Create requirements.txt
+    requirements = """mlflow==2.9.2
+cloudpickle==3.0.0
+numpy==1.24.3
+scikit-learn==1.2.2
+"""
+    with open(os.path.join(model_dir, "requirements.txt"), 'w') as f:
+        f.write(requirements)
+    print(f"✓ requirements.txt created")
     
     # ========================================
-    # STEP 3: Verify model.pkl exists
-    # ========================================
-    if os.path.exists(model_pkl_path):
-        file_size = os.path.getsize(model_pkl_path)
-        print(f"✓ model.pkl verified: {file_size:,} bytes")
-    else:
-        print(f"✗ ERROR: model.pkl still missing!")
-    
-    # ========================================
-    # STEP 4: Log model to MLflow tracking server
+    # LOG MODEL TO MLFLOW TRACKING SERVER
     # ========================================
     try:
         mlflow.sklearn.log_model(model, "model")
@@ -163,7 +201,7 @@ with mlflow.start_run(run_name="RandomForest_Basic_Model") as run:
         print(f"⚠ Failed to log model to tracking server: {e}")
     
     # ========================================
-    # STEP 5: List all files in model directory
+    # VERIFY ALL FILES
     # ========================================
     print("\n" + "=" * 60)
     print("📦 MODEL DIRECTORY CONTENTS:")
@@ -189,60 +227,4 @@ with mlflow.start_run(run_name="RandomForest_Basic_Model") as run:
     print("=" * 60)
     print(f"✓ Local artifacts saved to: {os.path.abspath(artifacts_dir)}")
     print(f"✓ MLflow run ID: {run.info.run_id}")
-    print("✓ Training completed successfully!")
-    print(f"✓ Run ID: {run.info.run_id}")
-    
-    # Train model
-    print("Training model...")
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
-    
-    # Predictions
-    y_pred = model.predict(X_test)
-    
-    # Calculate metrics
-    accuracy = accuracy_score(y_test, y_pred)
-    precision = precision_score(y_test, y_pred, average='weighted')
-    recall = recall_score(y_test, y_pred, average='weighted')
-    f1 = f1_score(y_test, y_pred, average='weighted')
-    
-    # Manual logging - Parameters
-    mlflow.log_param("n_estimators", 100)
-    mlflow.log_param("random_state", 42)
-    mlflow.log_param("test_size", 0.2)
-    
-    # Manual logging - Metrics
-    mlflow.log_metric("accuracy", accuracy)
-    mlflow.log_metric("precision", precision)
-    mlflow.log_metric("recall", recall)
-    mlflow.log_metric("f1_score", f1)
-    
-    # Create artifacts directory
-    artifacts_dir = "artifacts"
-    os.makedirs(artifacts_dir, exist_ok=True)
-    
-    # ========================================
-    # IMPORTANT: Save model locally for Docker build
-    # ========================================
-    model_dir = os.path.join(artifacts_dir, "model")
-    os.makedirs(model_dir, exist_ok=True)
-    
-    # Save using mlflow.sklearn.save_model (creates MLmodel file)
-    mlflow.sklearn.save_model(model, model_dir)
-    print(f"✓ Model saved locally to: {model_dir}")
-    
-    # Also log model to MLflow tracking server
-    mlflow.sklearn.log_model(model, "model")
-    print(f"✓ Model logged to MLflow tracking server")
-    
-    # Print results
-    print("=" * 50)
-    print("BASIC MODEL TRAINING RESULTS")
-    print("=" * 50)
-    print(f"Accuracy: {accuracy:.4f}")
-    print(f"Precision: {precision:.4f}")
-    print(f"Recall: {recall:.4f}")
-    print(f"F1 Score: {f1:.4f}")
-    print("=" * 50)
-    print(f"✓ Local artifacts saved to: {os.path.abspath(artifacts_dir)}")
     print("✓ Training completed successfully!")
