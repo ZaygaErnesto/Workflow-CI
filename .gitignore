@@ -53,10 +53,10 @@ mlartifacts/
 Thumbs.db
 
 # Model artifacts
-*.pkl
-*.h5
-*.pt
-*.pth
+# *.pkl
+# *.h5
+# *.pt
+# *.pth
 
 # Data files (uncomment if you don't want to track data)
 # *.csv
