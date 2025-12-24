@@ -96,6 +96,116 @@ with mlflow.start_run(run_name="RandomForest_Basic_Model") as run:
     recall = recall_score(y_test, y_pred, average='weighted')
     f1 = f1_score(y_test, y_pred, average='weighted')
     
+    # Log parameters & metrics
+    mlflow.log_param("n_estimators", 100)
+    mlflow.log_param("random_state", 42)
+    mlflow.log_param("test_size", 0.2)
+    
+    mlflow.log_metric("accuracy", accuracy)
+    mlflow.log_metric("precision", precision)
+    mlflow.log_metric("recall", recall)
+    mlflow.log_metric("f1_score", f1)
+    
+    # Create artifacts directory
+    artifacts_dir = "artifacts"
+    os.makedirs(artifacts_dir, exist_ok=True)
+    
+    # ========================================
+    # STEP 1: Save model using MLflow
+    # ========================================
+    model_dir = os.path.join(artifacts_dir, "model")
+    os.makedirs(model_dir, exist_ok=True)
+    
+    try:
+        mlflow.sklearn.save_model(model, model_dir)
+        print(f"✓ Model saved via MLflow: {model_dir}")
+    except Exception as e:
+        print(f"⚠ MLflow save failed: {e}")
+    
+    # ========================================
+    # STEP 2: FORCE SAVE model.pkl manually
+    # ========================================
+    import joblib
+    import cloudpickle
+    
+    model_pkl_path = os.path.join(model_dir, "model.pkl")
+    
+    try:
+        # Try with cloudpickle (MLflow's default)
+        with open(model_pkl_path, 'wb') as f:
+            cloudpickle.dump(model, f)
+        print(f"✓ [MANUAL] model.pkl saved with cloudpickle: {model_pkl_path}")
+    except Exception as e:
+        print(f"⚠ Cloudpickle failed: {e}")
+        try:
+            # Fallback to joblib
+            joblib.dump(model, model_pkl_path)
+            print(f"✓ [MANUAL] model.pkl saved with joblib: {model_pkl_path}")
+        except Exception as e2:
+            print(f"✗ Failed to save model.pkl: {e2}")
+    
+    # ========================================
+    # STEP 3: Verify model.pkl exists
+    # ========================================
+    if os.path.exists(model_pkl_path):
+        file_size = os.path.getsize(model_pkl_path)
+        print(f"✓ model.pkl verified: {file_size:,} bytes")
+    else:
+        print(f"✗ ERROR: model.pkl still missing!")
+    
+    # ========================================
+    # STEP 4: Log model to MLflow tracking server
+    # ========================================
+    try:
+        mlflow.sklearn.log_model(model, "model")
+        print(f"✓ Model logged to MLflow tracking server")
+    except Exception as e:
+        print(f"⚠ Failed to log model to tracking server: {e}")
+    
+    # ========================================
+    # STEP 5: List all files in model directory
+    # ========================================
+    print("\n" + "=" * 60)
+    print("📦 MODEL DIRECTORY CONTENTS:")
+    print("=" * 60)
+    for root, dirs, files in os.walk(model_dir):
+        level = root.replace(model_dir, '').count(os.sep)
+        indent = ' ' * 2 * level
+        print(f'{indent}{os.path.basename(root)}/')
+        subindent = ' ' * 2 * (level + 1)
+        for file in files:
+            file_path = os.path.join(root, file)
+            file_size = os.path.getsize(file_path)
+            print(f'{subindent}{file} ({file_size:,} bytes)')
+    
+    # Print results
+    print("\n" + "=" * 60)
+    print("📊 TRAINING RESULTS")
+    print("=" * 60)
+    print(f"Accuracy:  {accuracy:.4f}")
+    print(f"Precision: {precision:.4f}")
+    print(f"Recall:    {recall:.4f}")
+    print(f"F1 Score:  {f1:.4f}")
+    print("=" * 60)
+    print(f"✓ Local artifacts saved to: {os.path.abspath(artifacts_dir)}")
+    print(f"✓ MLflow run ID: {run.info.run_id}")
+    print("✓ Training completed successfully!")
+    print(f"✓ Run ID: {run.info.run_id}")
+    
+    # Train model
+    print("Training model...")
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+    
+    # Predictions
+    y_pred = model.predict(X_test)
+    
+    # Calculate metrics
+    accuracy = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred, average='weighted')
+    recall = recall_score(y_test, y_pred, average='weighted')
+    f1 = f1_score(y_test, y_pred, average='weighted')
+    
     # Manual logging - Parameters
     mlflow.log_param("n_estimators", 100)
     mlflow.log_param("random_state", 42)
